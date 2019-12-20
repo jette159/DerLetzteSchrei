@@ -3,18 +3,21 @@ from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 import sys
 import time
-
-
 import math
 import cv2
 import socket
 import os
+
+face_cascade = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
+
+#Variablen die zur Berechnung der Mittelwerte der Gesichtsposition genutzt werden
 medianX=0
 medianY=0
-face_cascade = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
 medianLength = 25
 pastxValues=[0]*medianLength
 pastyValues=[0]*medianLength
+
+#Varibalen, welche die im Layout gesetzten Werte speichern um sie zu übergeben zwischen verschiedenen Funktionen
 currentMode=0
 currentVolume=0.5
 currentMinFrequency=400
@@ -24,26 +27,28 @@ currentDiySound2=33
 currentDiySound3=17
 currentDiySound4=33
 
-def dark_palette():
 
-    dark_palette = QPalette()
+# Definiert die Farbpalette, welche im Layout genutzt wird. In unserem Fall sehr pinklastig.
+def pink_palette():              
+    
+    pink_palette = QPalette()
+    pink_palette.setColor(QPalette.Window, QColor(240, 120, 240))
+    pink_palette.setColor(QPalette.WindowText, Qt.white)
+    pink_palette.setColor(QPalette.Base, QColor(100, 0, 100))
+    pink_palette.setColor(QPalette.AlternateBase, QColor(100, 0, 100))
+    pink_palette.setColor(QPalette.ToolTipBase, Qt.white)
+    pink_palette.setColor(QPalette.ToolTipText, Qt.white)
+    pink_palette.setColor(QPalette.Text, Qt.white)
+    pink_palette.setColor(QPalette.Button, QColor(100, 0, 100))
+    pink_palette.setColor(QPalette.ButtonText, Qt.white)
+    pink_palette.setColor(QPalette.BrightText, Qt.red)
+    pink_palette.setColor(QPalette.Link, QColor(42, 130, 218))
+    pink_palette.setColor(QPalette.Highlight, QColor(255, 0, 218))
+    pink_palette.setColor(QPalette.HighlightedText, Qt.black)
 
-    dark_palette.setColor(QPalette.Window, QColor(240, 120, 240))
-    dark_palette.setColor(QPalette.WindowText, Qt.white)
-    dark_palette.setColor(QPalette.Base, QColor(100, 0, 100))
-    dark_palette.setColor(QPalette.AlternateBase, QColor(100, 0, 100))
-    dark_palette.setColor(QPalette.ToolTipBase, Qt.white)
-    dark_palette.setColor(QPalette.ToolTipText, Qt.white)
-    dark_palette.setColor(QPalette.Text, Qt.white)
-    dark_palette.setColor(QPalette.Button, QColor(100, 0, 100))##dreh und dropdown
-    dark_palette.setColor(QPalette.ButtonText, Qt.white)
-    dark_palette.setColor(QPalette.BrightText, Qt.red)
-    dark_palette.setColor(QPalette.Link, QColor(42, 130, 218))
-    dark_palette.setColor(QPalette.Highlight, QColor(255, 0, 218))
-    dark_palette.setColor(QPalette.HighlightedText, Qt.black)
+    app.setPalette(pink_palette) 
 
-    app.setPalette(dark_palette) 
-
+#Berechnung des Medians um die Bewegung flüssiger zu machen, hierbei werden die vorherigen Werte in unterschiedlcihen Gewichtungen berücksichtigt
 def calculateMedian(value, pastValues):
     for i in range(0,len(pastValues)-1,1):
         pastValues[len(pastValues)-1-i]=pastValues[len(pastValues)-2-i]
@@ -55,6 +60,7 @@ def calculateMedian(value, pastValues):
     median=0.7*value+0.2*summe+0.05*pastValues[1]+0.05*pastValues[2]
     return [median, pastValues]
 
+#Funktion welche die Werte aus dem Reglern im Layout und aus der Videoverarbeitung an Pure Data weitergibt
 def send_Frequenz_and_Volume_to_pure_Data(x,y,modus):
     global currentMinFrequency
     global currentMaxFrequency
@@ -63,56 +69,64 @@ def send_Frequenz_and_Volume_to_pure_Data(x,y,modus):
     global currentDiySound2
     global currentDiySound3
     global currentDiySound4
- 
-    s = socket.socket()
-    host = socket.gethostname()
-    port = 3000
-    s.connect((host, port))
+
     maxVolume = 100
-    width=640
-    height=480 #einstellbar!!!!!!!
-    frequency = ((x/width)*(currentMaxFrequency-currentMinFrequency)+currentMinFrequency)
-    ynew= -1*((y/height)*100)+100
-    volume=(10**math.log2(((ynew))/25))*100
-    #volume = 100-(-1/187500*((y/height)*maxVolume)**3 + 27/2500*((y/height)*maxVolume)**2 - 2/75*((y/height)*maxVolume))
-    #volume = 100 - (47/2275000000*((y/height)*maxVolume)**5 - 1507/1137500000*((y/height)*maxVolume)**4 - 5671/39000000*((y/height)*maxVolume)**3 + 33233/1820000*((y/height)*maxVolume)**2 - 6169/54600*((y/height)*maxVolume))
-    #volume=100-(10 ** (((y/height)*maxVolume)/50))-2
-    volume=volume*currentVolume
-    volume= int(volume)
+    width_frame=640
+    height_frame=480
+ 
+    #Berechnung der zusendenden Werte
+    frequency = ((x/width_frame)*(currentMaxFrequency-currentMinFrequency)+currentMinFrequency) # skaliert Framebreite und Frequenzbereich 
+    ynew= -1*((y/height_frame)*100)+100 #skaliert Framehöhe mit Volumewerten 0-100 (linear)
+    volume=(10**math.log2(((ynew))/25))*100 # Skaliert Volume logarithmisch sodas sich die Erhöhung linear anhört
+    
+    volume=volume*currentVolume # Volume aus der Videoverarbeitung wird mit dem am Regler eingestelten Wert verbunden
+    volume= int(volume) # Wandlung, da Pure Data kein Fan von float Zahlen ist
+
+    #um übersteuerung zu verhindern
     if volume>10000:
         volume = 10000
     if volume<0:
         volume = 0
 
 
-    
+    #Berechnung der Zusammensetzung des DIY-Sounds aus den Reglerwerten
     diySoundGesamt = currentDiySound1+currentDiySound2+currentDiySound3+currentDiySound4
     DiySound1 = 100*currentDiySound1 / diySoundGesamt
     DiySound2 = 100*currentDiySound2 / diySoundGesamt
     DiySound3 = 100*currentDiySound3 / diySoundGesamt
     DiySound4 = 100*currentDiySound4 / diySoundGesamt
     
-    message = "0 " + str(frequency) + " ;" #Need to add " ;" at the end so pd knows when you're finished writing.
+    #öffnen des Ports
+    s = socket.socket()
+    host = socket.gethostname()
+    port = 3000
+    s.connect((host, port))
+
+    #Der eigentliche Teil in dem die Werte geschickt werden
+    message = "0 " + str(frequency) + " ;" 
     s.send(message.encode('utf-8'))
-    message = "1 " + str(volume) + " ;" #Need to add " ;" at the end so pd knows when you're finished writing.
+    message = "1 " + str(volume) + " ;" 
     s.send(message.encode('utf-8'))
-    message = "2 " + str(modus) + " ;" #Need to add " ;" at the end so pd knows when you're finished writing.
+    message = "2 " + str(modus) + " ;" 
     s.send(message.encode('utf-8'))
-    message = "3 " + str(DiySound1) + " ;" #Need to add " ;" at the end so pd knows when you're finished writing.
+    message = "3 " + str(DiySound1) + " ;" 
     s.send(message.encode('utf-8'))
-    message = "4 " + str(DiySound2) + " ;" #Need to add " ;" at the end so pd knows when you're finished writing.
+    message = "4 " + str(DiySound2) + " ;"
     s.send(message.encode('utf-8'))
-    message = "5 " + str(DiySound3) + " ;" #Need to add " ;" at the end so pd knows when you're finished writing.
+    message = "5 " + str(DiySound3) + " ;" 
     s.send(message.encode('utf-8'))
-    message = "6 " + str(DiySound4) + " ;" #Need to add " ;" at the end so pd knows when you're finished writing.
+    message = "6 " + str(DiySound4) + " ;" 
     s.send(message.encode('utf-8'))
 
+#Threads Emma
 class WorkerSignals(QObject):
     x = pyqtSignal(int, int)
     y = pyqtSignal(int)
+
+#Worker Emma
 class Worker(QRunnable):
     '''
-    Worker thread
+    Worker thread #muss das da sein Emma
     '''
     def __init__(self):
         super(Worker, self).__init__()
@@ -128,7 +142,7 @@ class Worker(QRunnable):
         global currentVolume
         
         '''
-        Your code goes in this function
+        Your code goes in this function #same hier Emma
         '''
         print("Thread start") 
         cap = cv2.VideoCapture(0)
@@ -138,13 +152,13 @@ class Worker(QRunnable):
             ret, frame = cap.read()
             if ret == False: ## checkt is ein videobild da
                 break
+           
             #Frame in Graustufen wandeln
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            # width  = cap.get(cv2.CAP_PROP_FRAME_WIDTH)  
-            # height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
-            # print(width, height)
-            
+                        
             faces = face_cascade.detectMultiScale(gray, 1.3, 5) 
+
+            #Gesichter werden erkannt und Werte in Liste geschrieben
             for (x,y,w,h) in faces:
                 cx=int(x)+int(w/2)
                 X_list = calculateMedian(cx, pastxValues)
@@ -156,70 +170,85 @@ class Worker(QRunnable):
                 self.signals.x.emit(medianX,medianY)
                 
                 
-                
+                #um zu verhindern, das Pure Data sich shcließt, wird es einfahc wieder neu geöffnet
                 try:
                     send_Frequenz_and_Volume_to_pure_Data(medianX+200,medianY,currentMode)
                 except ConnectionRefusedError:
-                    print("nur für ein gesicht gedacht warte eine sekunde")##muss auch ins overlay
                     os.startfile("Zound_extended.pd") 
         print("Thread complete")   
 
-class Example(QWidget):
+#GUI
+class GUI(QWidget):
     
+    #Initialisierung des gesamten Widget
     def __init__(self):
         
         
         super().__init__()
         
         self.threadpool = QThreadPool()
-        print("Multithreading with maximum %d threads" % self.threadpool.maxThreadCount())
-        
-        
-        
-        app.setStyle('Fusion')
+        print("Multithreading with maximum %d threads" % self.threadpool.maxThreadCount()) #muss das bleibe? Emma
+
+        #setzt das Grundsätzliche Fensterdesign    
+        app.setStyle('Fusion') 
         app.setStyleSheet("QToolTip { color: #ffffff; background-color: #2a82da; border: 1px solid white; }")
-        self.button()
-        
-        
-        self.Genral()
-        self.Drehknopf()
-        self.Dropdown()
-        self.Frequenzbereich()
-        self.Slider()
-        self.symbols()
-        self.PositionLabel()
+
+        #initalisiert die einzelnen Layoutelemente
+        self.Genral()  
+        self.button_go()
+        self.Dial_Volume()
+        self.Select_Modus()
+        self.Select_Frequency()
+        self.DIYSound_Components()
+        self.Icons_DIYSound()
+        self.Cursor()
         self.Logo()
         self.show()
-        
-
-        
-    
-        
-
+ 
+    # Was tut das Emma? + Name ändern
     def oh_no(self):
         worker = Worker()
-        worker.signals.x.connect(self.Frequenz_Volume)
+        worker.signals.x.connect(self.Cursor_Movement)
         self.threadpool.start(worker) 
 
-    def PositionLabel(self):
+    #setzt die Größe des Programmfenster und den Titel
+    def Genral(self):
+        self.setGeometry(0, 0, 1920, 1080)
+        self.setWindowTitle('Der letzte Schrei')
+
+    #setzt den Cursor, welcher die Bewegung des Kopfes wiedergibt
+    def Cursor(self):
         self.XLabel = QLabel("position", self)
         pixmap = QPixmap('saebelzahn_kopf.png')
         self.XLabel.setPixmap(pixmap)
         self.XLabel.move(925,405 )
         self.XLabel.show()
 
+    #setzt die Logografik oben in der Mitte und der beiden Säbelzahntiger unten links und rechts
     def Logo(self):
         LogoLabel = QLabel("Logo", self)
         pixmap = QPixmap('Logo_transparent.PNG')
         LogoLabel.setPixmap(pixmap)
         LogoLabel.move(610,7)
-         
-    def Frequenz_Volume(self, x, y):
+
+        slabel = QLabel(self)
+        spixmap = QPixmap('saebelzahn.png')
+        slabel.setPixmap(spixmap)
+        slabel.move(15, 900)
+        
+        slabel2 = QLabel(self)
+        spixmap2 = QPixmap('saebelzahn2.png')
+        slabel2.setPixmap(spixmap2)
+        slabel2.move(1755, 900)
+
+    #bewegt den Sebelzahntigerkopf     
+    def Cursor_Movement(self, x, y):
         x=5/4*x+560
         y=5/4*y+110
         
         self.XLabel.move(x,y)
 
+    #initialisiert das Grüne Rechteck in der Mitte
     def paintEvent (self, event):
     
         painter=QPainter(self)
@@ -228,20 +257,16 @@ class Example(QWidget):
 
         painter.drawRect(560, 110, 800,600)
 
-    def Genral(self):
-        self.setGeometry(0, 0, 1920, 1080)
-        self.setWindowTitle('Puzzelkiste')
-    
-    def button(self):
+    #setzt den Knopf, der die Threads startet
+    def button_go(self):
         button = QPushButton("GO!", self)  
         button.pressed.connect(self.oh_no)
         button.setGeometry(890,890,140,70)
         newfont = QFont("Times", 40, QFont.Bold) 
         button.setFont(newfont)
-  
-    def Dropdown(self):      
-
-        self.lbl = QLabel("Modus", self)
+    
+    #Setzt das Modusauswahlfenster und die dazu gehörende Überschrift und verbindet es, sodass bei Veränderung diese weiter gegeben wird     
+    def Select_Modus(self):      
 
         combo = QComboBox(self)
         combo.addItem("Sinus")
@@ -250,47 +275,53 @@ class Example(QWidget):
         combo.addItem("Schrei")
         newfont = QFont("Times", 30, QFont.Bold) 
         combo.setFont(newfont)
-
         combo.setGeometry(85,190,250,80)
+
+        self.lbl = QLabel("Modus", self)
         self.lbl.move(110, 110)
         newfont2 = QFont("Times", 40, QFont.Bold) 
         self.lbl.setFont(newfont2)
 
-        combo.activated[str].connect(self.onActivatedCombo)  
+        combo.activated[str].connect(self.onActivatedCombo) 
 
+    #Schreibt die Veränderung der Modusänderung in die Variabel bei Änderung so gewandelt, das sie weiterverwendet werden kann
     def onActivatedCombo(self, text):
         global currentMode
-        #self.lbl.setText(text)
-        #self.lbl.adjustSize() 
         modedict={
             "Sinus": 0,
             "Depech Mode": 1,
             "DIY": 2,
             "Schrei" : 3,
-
         }
-        currentMode=modedict[text] 
-           #entweder returenen oder global variable oder noch ne funktion die die variablen ändert
         
-    def Drehknopf(self):
-        labeldial = QLabel("Volume", self)
-
+        currentMode=modedict[text] 
+          
+    #setzt das Volumerad und das dazugehörende Label und verbindet es, sodass bei Veränderung diese weiter gegeben wird     
+    def Dial_Volume(self):
+        
         dial = QDial(self)
         dial.setValue(50)
         dial.setGeometry(1540,160,350,350)
 
+        labeldial = QLabel("Volume", self)
         labeldial.move(1600, 110)
         newfont2 = QFont("Times", 40, QFont.Bold) 
         labeldial.setFont(newfont2)
 
-        dial.valueChanged[int].connect(self.onActivatedDial) #he dial also emits sliderPressed() and sliderReleased() signals when the mouse button is pressed and released. Note that the dial’s value can change without these signals being emitted since the keyboard and wheel can also be used to change the value
+        dial.valueChanged[int].connect(self.onActivatedDial) 
 
+    #Schreibt die Veränderung des Volumerads in die Variabel bei Änderung so gewandelt, das sie weiterverwendet werden kann
     def onActivatedDial(self, number):
         global currentVolume
         currentVolume=number/100
 
-    def Frequenzbereich(self):
+    #setzt die beiden Felder, mit welchen der Frequenzbereich ausgewählt werden kann, und das dazugehörende Label 
+    #und verbindet sie, sodass bei Veränderung diese weiter gegeben werden  
+    def Select_Frequency(self):
         labelfrequenz = QLabel("Frequenzbereich", self)
+        labelfrequenz.move(1510, 500)
+        newfont2 = QFont("Times", 35, QFont.Bold) 
+        labelfrequenz.setFont(newfont2)
 
         newfont = QFont("Times", 25, QFont.Bold) 
         spinBox1 = QSpinBox(self)
@@ -307,22 +338,22 @@ class Example(QWidget):
         spinBox2.setValue(800)
         spinBox2.setFont(newfont)
 
-        labelfrequenz.move(1510, 500)
-        newfont2 = QFont("Times", 35, QFont.Bold) 
-        labelfrequenz.setFont(newfont2)
-
         spinBox1.valueChanged[int].connect(self.onActivatedSpinBox1)
         spinBox2.valueChanged[int].connect(self.onActivatedSpinBox2)
     
+    #Schreibt die Veränderung der unteren Frequenzgrenze in die Variabel bei Änderung 
     def onActivatedSpinBox1(self, nummer):
         global currentMinFrequency
         currentMinFrequency=nummer
    
+    #Schreibt die Veränderung der oberen Frequenzgrenze in die Variabel bei Änderung 
     def onActivatedSpinBox2(self, nummer):
         global currentMaxFrequency
         currentMaxFrequency=nummer
 
-    def Slider(self):
+    #setzt die vier Schieber, mit welchen die Gewichtung der Soundkomponenten ausgewählt werden kann
+    #und verbindet sie, sodass bei Veränderung diese weiter gegeben werden 
+    def DIYSound_Components(self):
         labelslider = QLabel("make your own sound", self)
 
         slider = QSlider(Qt.Horizontal, self)
@@ -350,6 +381,7 @@ class Example(QWidget):
         slider3.valueChanged[int].connect(self.onActivatedSlider3)
         slider4.valueChanged[int].connect(self.onActivatedSlider4)
 
+    #Die Verbindung der vier Schieber für Veränderungen
     def onActivatedSlider1(self, nummer):
         global currentDiySound1
         currentDiySound1=nummer
@@ -363,7 +395,8 @@ class Example(QWidget):
         global currentDiySound4
         currentDiySound4=nummer
     
-    def symbols(self):
+    #Positionierung der vier Icons vor den DIYSound-Reglern 
+    def Icons_DIYSound(self):
         label = QLabel(self)
         pixmap = QPixmap('sinus.png')
         label.setPixmap(pixmap)
@@ -383,21 +416,11 @@ class Example(QWidget):
         pixmap4 = QPixmap('rechteck.png')
         label4.setPixmap(pixmap4)
         label4.move(15, 570)
-        
-        slabel = QLabel(self)
-        spixmap = QPixmap('saebelzahn.png')
-        slabel.setPixmap(spixmap)
-        slabel.move(15, 900)
-        
-        slabel2 = QLabel(self)
-        spixmap2 = QPixmap('saebelzahn2.png')
-        slabel2.setPixmap(spixmap2)
-        slabel2.move(1755, 900)
     
-                
+#start der gesamten Anwendung                
 if __name__ == '__main__':
     
     app = QApplication(sys.argv)
-    dark_palette()
-    ex = Example()
+    pink_palette()
+    ex = GUI()
     sys.exit(app.exec_())
