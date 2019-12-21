@@ -118,16 +118,14 @@ def send_Frequenz_and_Volume_to_pure_Data(x,y,modus):
     message = "6 " + str(DiySound4) + " ;" 
     s.send(message.encode('utf-8'))
 
-#Threads Emma
+#diese klasse beinhaltet die signale die wir aus dem einen thread in den anderen schicken wollen
 class WorkerSignals(QObject):
     x = pyqtSignal(int, int)
     y = pyqtSignal(int)
 
-#Worker Emma
+#diese klasse beinhaltet den thread der neben der klasse gui laiufen soll
 class Worker(QRunnable):
-    '''
-    Worker thread #muss das da sein Emma
-    '''
+    
     def __init__(self):
         super(Worker, self).__init__()
         self.signals = WorkerSignals()
@@ -141,10 +139,8 @@ class Worker(QRunnable):
         global currentMode
         global currentVolume
         
-        '''
-        Your code goes in this function #same hier Emma
-        '''
-        print("Thread start") 
+        #here starts what the thread is supposed to do
+
         cap = cv2.VideoCapture(0)
         while True:
            
@@ -183,11 +179,9 @@ class GUI(QWidget):
     #Initialisierung des gesamten Widget
     def __init__(self):
         
-        
         super().__init__()
         
-        self.threadpool = QThreadPool()
-        print("Multithreading with maximum %d threads" % self.threadpool.maxThreadCount()) #muss das bleibe? Emma
+        self.threadpool = QThreadPool() #initialiesieren von den threads
 
         #setzt das Grundsätzliche Fensterdesign    
         app.setStyle('Fusion') 
@@ -205,8 +199,8 @@ class GUI(QWidget):
         self.Logo()
         self.show()
  
-    # Was tut das Emma? + Name ändern
-    def oh_no(self):
+    # ruft thread auf und ruft cursor movement mit den gesendet signalen von dem thread auf
+    def start_thread(self):
         worker = Worker()
         worker.signals.x.connect(self.Cursor_Movement)
         self.threadpool.start(worker) 
@@ -260,7 +254,7 @@ class GUI(QWidget):
     #setzt den Knopf, der die Threads startet
     def button_go(self):
         button = QPushButton("GO!", self)  
-        button.pressed.connect(self.oh_no)
+        button.pressed.connect(self.start_thread)
         button.setGeometry(890,890,140,70)
         newfont = QFont("Times", 40, QFont.Bold) 
         button.setFont(newfont)
